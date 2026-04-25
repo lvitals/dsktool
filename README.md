@@ -1,4 +1,4 @@
-# DSKTOOL v1.3
+# DSKTOOL v1.4
 
 **By Ricardo Bittencourt**  
 _Updated by Tony Cruise (2010)_  
@@ -30,7 +30,7 @@ Among the new features, advanced **boot sector** operations allow deeper disk ma
 
 ## 2\. Syntax
 
-DSKTOOL <command> <dsk\_file> \[files\] \[options\]
+dsktool <command> <dsk\_file> \[files\] \[options\]
 
 ### Commands
 
@@ -66,29 +66,29 @@ DSKTOOL <command> <dsk\_file> \[files\] \[options\]
 
 ### 3.1. List contents with the modern command
 
-DSKTOOL ls GAMEPACK.DSK
+dsktool ls GAMEPACK.DSK
 
 ### 3.2. Extract all `.COM` files while preserving case
 
-DSKTOOL x UTILS.DSK \*.COM
+dsktool x UTILS.DSK \*.COM
 
 ### 3.3. Advanced disk surgery - Replace boot sector
 
-DSKTOOL sw SYSTEM.DSK CUSTOM.BIN
+dsktool sw SYSTEM.DSK CUSTOM.BIN
 
-DSKTOOL a SYSTEM.DSK NEWKERNEL.SYS
+dsktool a SYSTEM.DSK NEWKERNEL.SYS
 
 ### 3.4. Create a new disk with a custom boot
 
-DSKTOOL s BLANK.DSK 0
+dsktool s BLANK.DSK 0
 
-DSKTOOL sw BLANK.DSK MYBOOT.BIN
+dsktool sw BLANK.DSK MYBOOT.BIN
 
-DSKTOOL a BLANK.DSK MYPROG\*.\*
+dsktool a BLANK.DSK MYPROG\*.\*
 
 ### 3.5. Forensic recovery - Dump boot sector
 
-DSKTOOL sx MYSTERY.DSK BOOTSAVE.BIN
+dsktool sx MYSTERY.DSK BOOTSAVE.BIN
 
 - - -
 
@@ -100,9 +100,16 @@ New suggestions are always welcome! The MSX scene continues to evolve, and our t
 
 ## 5\. What's New
 
+
+### **\[1.4\] 2026 - Leandro V. Catarin**
+
+✅ Added wildcard support in `[files]` parameter (`*` and `?`).  
+✅ Added `--boot-label=LABEL` to define the 11-character volume label in the boot sector.  
+✅ Added `--hidden-system-file=NAME` to mark files as `Hidden+System`.  
+
 ### **\[1.3\] 2025 - Leandro V. Catarin**
 
-✅ Added boot sector operations (_save, restore, initialize_).  
+✅ Added boot sector operations (`save`, `restore`, `initialize`).   
 ✅ Modernized command set (_ls/x/rm_) while keeping original commands.  
 ✅ Improved error handling and user feedback.  
 ✅ Preparations for future disk format support.  
@@ -122,7 +129,7 @@ New suggestions are always welcome! The MSX scene continues to evolve, and our t
 
 Standing on the shoulders of giants, I acknowledge:
 
-🖥️ **Ricardo Bittencourt** and **Tony Cruise**, original creators of DSKTOOL.  
+🖥️ **Ricardo Bittencourt** and **Tony Cruise**, original creators of dsktool.  
 📖 **Eduardo Barbosa** and **Edison Moraes**, authors of the "MSX Bible".  
 🔧 **DJ Delorie** and **Charles Sandmann**, DJGPP pioneers.  
 🆓 **Richard Stallman**, free software champion.  

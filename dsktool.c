@@ -938,7 +938,7 @@ int main(int argc, char **argv) {
         printf("Updated 2010 by Tony Cruise\n");
         printf("Updated 2025 by Leandro V. Catarin\n\n");
 
-        printf("Usage: DSKTOOL command archive [files]\n\n");
+        printf("Usage: dsktool command archive [files]\n\n");
         printf("commands:\n");
         printf("\t\tls\tlist contents of .DSK\n");
         printf("\t\tx\textract files from .DSK (supports wildcards)\n");
@@ -949,14 +949,14 @@ int main(int argc, char **argv) {
         printf("\t\tsw\twrite boot sector from a file\n");
         printf("\t\ts\tinitialize boot sector (0=zeros, 1=default)\n");
         printf("\nexamples:\n");
-        printf("\t\tDSKTOOL ls TALKING.DSK\n");
-        printf("\t\tDSKTOOL x TALKING.DSK FUZZ*.*\n");
-        printf("\t\tDSKTOOL a TALKING.DSK MSXDOS.SYS COMMAND.COM\n");
-        printf("\t\tDSKTOOL rm TALKING.DSK *.BAS *.BIN\n");
-        printf("\t\tDSKTOOL sx TALKING.DSK BOOT.BIN\n");
-        printf("\t\tDSKTOOL sw TALKING.DSK NEWBOOT.BIN\n");
-        printf("\t\tDSKTOOL s TALKING.DSK 0  (fill boot sector with zeros)\n");
-        printf("\t\tDSKTOOL s TALKING.DSK 1  (restore default MSX boot)\n");
+        printf("\t\tdsktool ls TALKING.DSK\n");
+        printf("\t\tdsktool x TALKING.DSK FUZZ*.*\n");
+        printf("\t\tdsktool a TALKING.DSK MSXDOS.SYS COMMAND.COM\n");
+        printf("\t\tdsktool rm TALKING.DSK *.BAS *.BIN\n");
+        printf("\t\tdsktool sx TALKING.DSK BOOT.BIN\n");
+        printf("\t\tdsktool sw TALKING.DSK NEWBOOT.BIN\n");
+        printf("\t\tdsktool s TALKING.DSK 0  (fill boot sector with zeros)\n");
+        printf("\t\tdsktool s TALKING.DSK 1  (restore default MSX boot)\n");
         exit(1);
     }
     
