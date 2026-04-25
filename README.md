@@ -53,6 +53,9 @@ DSKTOOL <command> <dsk\_file> \[files\] \[options\]
 📌 **Note:**
 
 *   The `[files]` parameter supports wildcards (`*` and `?`).
+
+*   For `a`, use `--boot-label=LABEL` to set the 11-character volume label in the boot sector.
+*   For `a`, use `--hidden-system-file=NAME` for each file that must be marked as `Hidden+System`.
     
 *   For boot operations, specify either a filename (`sx/sw`) or an initialization mode (`s`).
     

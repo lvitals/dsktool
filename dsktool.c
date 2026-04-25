@@ -8,8 +8,8 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <time.h>
+#include <stdint.h>
 #include <fnmatch.h>
-#include "msxboot.h"
 
 typedef unsigned char byte;
 typedef unsigned short word;
@@ -39,8 +39,26 @@ byte *direc;
 byte *cluster;
 int sectorsperfat, numberoffats, reservedsectors;
 int bytespersector, direlements, fatelements;
+int sectorspercluster, clusterbytes;
 int availsectors;
 DiskType disktype;
+char *hidden_system_files[128];
+int hidden_system_file_count;
+char boot_label[12] = "NO NAME    ";
+
+static const byte nextor_dos220_boot_code[] = {
+    0xD0, 0xED, 0x53, 0x7B, 0xC0, 0x11, 0x78, 0xC0,
+    0x73, 0x23, 0x72, 0x11, 0x80, 0xC0, 0x0E, 0x0F,
+    0xCD, 0x7D, 0xF3, 0x3C, 0xCA, 0x22, 0x40, 0x11,
+    0x00, 0x01, 0x0E, 0x1A, 0xCD, 0x7D, 0xF3, 0x21,
+    0x01, 0x00, 0x22, 0x8E, 0xC0, 0x21, 0x00, 0x3F,
+    0x11, 0x80, 0xC0, 0x0E, 0x27, 0xD5, 0xCD, 0x7D,
+    0xF3, 0xD1, 0x0E, 0x10, 0xCD, 0x7D, 0xF3, 0xC3,
+    0x00, 0x01, 0x68, 0xC0, 0xCD, 0x00, 0x00, 0xC3,
+    0x22, 0x40, 0x00, 0x00, 0x4D, 0x53, 0x58, 0x44,
+    0x4F, 0x53, 0x20, 0x20, 0x53, 0x59, 0x53, 0x00,
+    0x00, 0x00, 0x00
+};
 
 // Helper function to detect disk type by size
 DiskType detect_disk_type(size_t size) {
@@ -53,6 +71,199 @@ DiskType detect_disk_type(size_t size) {
     }
 }
 
+static void initialize_boot_parameters(void) {
+    bytespersector = 512;
+    reservedsectors = 1;
+    numberoffats = 2;
+
+    switch(disktype) {
+        case DSK_180KB:
+            sectorspercluster = 1;
+            direlements = 64;
+            sectorsperfat = 2;
+            break;
+        case DSK_360KB:
+            sectorspercluster = 2;
+            direlements = 112;
+            sectorsperfat = 2;
+            break;
+        case DSK_720KB:
+            sectorspercluster = 2;
+            direlements = 112;
+            sectorsperfat = 3;
+            break;
+        case DSK_1440KB:
+            sectorspercluster = 1;
+            direlements = 224;
+            sectorsperfat = 9;
+            break;
+        default:
+            sectorspercluster = 2;
+            direlements = 112;
+            sectorsperfat = 3;
+            break;
+    }
+
+    clusterbytes = bytespersector * sectorspercluster;
+}
+
+static void store_word_le(byte *target, word value) {
+    target[0] = value & 0xFF;
+    target[1] = value >> 8;
+}
+
+static void store_dword_le(byte *target, uint32_t value) {
+    target[0] = value & 0xFF;
+    target[1] = (value >> 8) & 0xFF;
+    target[2] = (value >> 16) & 0xFF;
+    target[3] = (value >> 24) & 0xFF;
+}
+
+static uint32_t create_serial_number(void) {
+    uint32_t serial = (uint32_t)time(NULL);
+    serial ^= (uint32_t)getpid() << 16;
+    serial ^= (uint32_t)clock();
+    return serial;
+}
+
+static void set_boot_label(const char *label) {
+    size_t i;
+
+    memset(boot_label, ' ', 11);
+    boot_label[11] = '\0';
+    for (i = 0; i < 11 && label[i]; i++) {
+        boot_label[i] = label[i];
+    }
+}
+
+static void initialize_boot_sector(void) {
+    word total_sectors;
+    word sectors_per_track;
+    word heads;
+    byte media_descriptor;
+
+    initialize_boot_parameters();
+
+    memset(dskimage, 0, 512);
+
+    dskimage[0x00] = 0xEB;
+    dskimage[0x01] = 0xFE;
+    dskimage[0x02] = 0x90;
+    memcpy(dskimage + 3, "NEXTOR20", 8);
+
+    switch(disktype) {
+        case DSK_180KB:
+            total_sectors = 360;
+            sectors_per_track = 9;
+            heads = 1;
+            media_descriptor = 0xFC;
+            break;
+        case DSK_360KB:
+            total_sectors = 720;
+            sectors_per_track = 9;
+            heads = 2;
+            media_descriptor = 0xFD;
+            break;
+        case DSK_720KB:
+            total_sectors = 1440;
+            sectors_per_track = 9;
+            heads = 2;
+            media_descriptor = 0xF9;
+            break;
+        case DSK_1440KB:
+            total_sectors = 2880;
+            sectors_per_track = 18;
+            heads = 2;
+            media_descriptor = 0xF0;
+            break;
+        default:
+            total_sectors = 1440;
+            sectors_per_track = 9;
+            heads = 2;
+            media_descriptor = 0xF9;
+            break;
+    }
+
+    store_word_le(dskimage + 0x0B, bytespersector);
+    dskimage[0x0D] = sectorspercluster;
+    store_word_le(dskimage + 0x0E, reservedsectors);
+    dskimage[0x10] = numberoffats;
+    store_word_le(dskimage + 0x11, direlements);
+    store_word_le(dskimage + 0x13, total_sectors);
+    dskimage[0x15] = media_descriptor;
+    store_word_le(dskimage + 0x16, sectorsperfat);
+    store_word_le(dskimage + 0x18, sectors_per_track);
+    store_word_le(dskimage + 0x1A, heads);
+    store_word_le(dskimage + 0x1C, 0);
+
+    dskimage[0x1E] = 0x18;
+    dskimage[0x1F] = 0x1E;
+    memcpy(dskimage + 0x20, "VOL_ID", 6);
+    dskimage[0x26] = 0x00;
+    store_dword_le(dskimage + 0x27, create_serial_number());
+    memcpy(dskimage + 0x2B, boot_label, 11);
+    memcpy(dskimage + 0x36, "FAT12   ", 8);
+    memcpy(dskimage + 0x3E, nextor_dos220_boot_code, sizeof(nextor_dos220_boot_code));
+    store_word_le(dskimage + 0x1FE, 0xAA55);
+}
+
+static byte media_descriptor_for_disk(void) {
+    switch(disktype) {
+        case DSK_180KB:
+            return 0xFC;
+        case DSK_360KB:
+            return 0xFD;
+        case DSK_720KB:
+            return 0xF9;
+        case DSK_1440KB:
+            return 0xF0;
+        default:
+            return 0xF9;
+    }
+}
+
+static void uppercase_filename(const char *name, char *buffer, size_t buffer_size) {
+    size_t i;
+
+    snprintf(buffer, buffer_size, "%s", name);
+    for (i = 0; buffer[i]; i++) {
+        buffer[i] = toupper((unsigned char)buffer[i]);
+    }
+}
+
+static void add_hidden_system_file(const char *name) {
+    char normalized[13];
+    size_t length;
+
+    if (hidden_system_file_count >= (int)(sizeof(hidden_system_files) / sizeof(hidden_system_files[0]))) {
+        printf("Too many --hidden-system-file options\n");
+        exit(17);
+    }
+
+    uppercase_filename(name, normalized, sizeof(normalized));
+    length = strlen(normalized) + 1;
+    hidden_system_files[hidden_system_file_count] = malloc(length);
+    if (!hidden_system_files[hidden_system_file_count]) {
+        perror("Memory allocation failed");
+        exit(1);
+    }
+    memcpy(hidden_system_files[hidden_system_file_count], normalized, length);
+    hidden_system_file_count++;
+}
+
+static int should_mark_as_hidden_system_file(const char *name) {
+    char uppername[13];
+    int i;
+
+    uppercase_filename(name, uppername, sizeof(uppername));
+    for (i = 0; i < hidden_system_file_count; i++) {
+        if (strcmp(uppername, hidden_system_files[i]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /// <summary>
 /// Load the specified DSK file into memory
 /// </summary>
@@ -63,7 +274,7 @@ void load_dsk(char *name, int error) {
     if (stat(name, &st) == 0) {
         disktype = detect_disk_type(st.st_size);
         if (!disktype) {
-            printf("Unsupported disk size: %lld bytes\n", st.st_size);
+            printf("Unsupported disk size: %ld bytes\n", (long)st.st_size);
             printf("Supported formats:\n");
             printf(" 180KB: %d bytes (SS 40-track)\n", DSK_180KB);
             printf(" 360KB: %d bytes (DS 40-track)\n", DSK_360KB);
@@ -91,7 +302,7 @@ void load_dsk(char *name, int error) {
             exit(2);
         }
         memset(dskimage, 0, disktype);
-        memcpy(dskimage, msxboot, 512);
+        initialize_boot_sector();
     } else {
         if (read(file, dskimage, disktype) != disktype) {
             perror("Error reading .DSK file");
@@ -102,18 +313,16 @@ void load_dsk(char *name, int error) {
     }
 
     if (dskimage[510] != 0x55 || dskimage[511] != 0xAA) {
-        bytespersector = 512;
-        reservedsectors = 1;
-        numberoffats = 2;
-        sectorsperfat = 3;
-        direlements = 112;
+        initialize_boot_parameters();
     } else {
         // Read disk parameters from boot sector
         bytespersector = *(word *)(dskimage + 0x0B);
+        sectorspercluster = *(dskimage + 0x0D);
         reservedsectors = *(word *)(dskimage + 0x0E);
         numberoffats = *(dskimage + 0x10);
         sectorsperfat = *(word *)(dskimage + 0x16);
         direlements = *(word *)(dskimage + 0x11);
+        clusterbytes = bytespersector * sectorspercluster;
     }
 
     fat = dskimage + bytespersector * reservedsectors;
@@ -153,11 +362,11 @@ void load_dsk(char *name, int error) {
     int total_sectors = tracks * sectors_per_track * sides;
     availsectors = total_sectors - reservedsectors - (sectorsperfat * numberoffats);
     availsectors -= direlements * 32 / bytespersector;
-    fatelements = availsectors;
+    fatelements = availsectors / sectorspercluster;
 
     if (file < 0) {
         // Initialize FAT for new disk
-        fat[0] = (disktype == DSK_1440KB) ? 0xF0 : 0xF9;  // Media descriptor
+        fat[0] = media_descriptor_for_disk();
         fat[1] = 0xFF;
         fat[2] = 0xFF;
     }
@@ -262,7 +471,7 @@ int bytes_free(void) {
 
     for (i = 2; i < 2 + fatelements; i++)
         if (!next_link(i)) avail++;
-    return avail * 1024;
+    return avail * clusterbytes;
 }
 
 /// <summary>
@@ -386,15 +595,15 @@ void extract(fileinfo *file) {
     int current;
 
     printf("extracting %s.%s\n", file->name, file->ext);
-    buffer = (byte *)malloc((file->size + 1023) & (~1023));
+    buffer = (byte *)malloc((file->size + clusterbytes - 1) & (~(clusterbytes - 1)));
     memset(buffer, 0x1a, file->size);
     snprintf(name, sizeof(name), "%s.%s", file->name, file->ext);
     fileid = open(name, O_WRONLY | O_CREAT, 0644);
     current = file->first;
     p = buffer;
     do {
-        memcpy(p, cluster + (current - 2) * 1024, 1024);
-        p += 1024;
+        memcpy(p, cluster + (current - 2) * clusterbytes, clusterbytes);
+        p += clusterbytes;
         current = next_link(current);
     } while (current != 0xFFF);
     write(fileid, buffer, file->size);
@@ -537,16 +746,16 @@ void add_single_file(char *name, char *pathname) {
     }
     pos = i;
 
-    byte *buffer = (byte *)malloc((size + 1023) & (~1023));
+    byte *buffer = (byte *)malloc((size + clusterbytes - 1) & (~(clusterbytes - 1)));
     read(fileid, buffer, size);
     close(fileid);
 
-    total = (size + 1023) >> 10;
+    total = (size + clusterbytes - 1) / clusterbytes;
     current = first = get_free();
     byte *b1 = buffer;
     for (i = 0; i < total;) {
-        memcpy(cluster + (current - 2) * 1024, b1, 1024);
-        b1 += 1024;
+        memcpy(cluster + (current - 2) * clusterbytes, b1, clusterbytes);
+        b1 += clusterbytes;
         if (++i == total)
             next = 0xFFF;
         else
@@ -565,6 +774,11 @@ void add_single_file(char *name, char *pathname) {
         }
         direc[pos * 32 + i++] = toupper(*p);
     }
+
+    if (should_mark_as_hidden_system_file(name)) {
+        direc[pos * 32 + 0x0B] = 0x06; // Hidden + System
+    }
+
     *(word *)(direc + pos * 32 + 0x1A) = first;
     *(int *)(direc + pos * 32 + 0x1C) = size;
     
@@ -585,7 +799,7 @@ void add_files(char *name) {
     DIR *dir;
     struct dirent *entry;
     char *temp1, *temp2;
-    char path[200];
+    char path[250];
     char dirname[200];
     
     // Extract directory path from name
@@ -627,8 +841,17 @@ void add_files(char *name) {
 void add_to_dsk(int argc, char **argv) {
     int i;
 
-    for (i = 3; i < argc; i++)
+    for (i = 3; i < argc; i++) {
+        if (strncmp(argv[i], "--boot-label=", 13) == 0) {
+            set_boot_label(argv[i] + 13);
+            continue;
+        }
+        if (strncmp(argv[i], "--hidden-system-file=", 21) == 0) {
+            add_hidden_system_file(argv[i] + 21);
+            continue;
+        }
         add_files(argv[i]);
+    }
 }
 
 /// <summary>
@@ -700,7 +923,7 @@ void delete_boot_sector(char *dsk_filename, int fill_with_zero) {
         printf("Boot sector cleared (filled with zeros)\n");
     } else {
         // Option 2: Restore default MSX boot sector
-        memcpy(dskimage, msxboot, 512);
+        initialize_boot_sector();
         printf("Boot sector restored to default MSX bootloader\n");
     }
 
@@ -721,6 +944,7 @@ int main(int argc, char **argv) {
         printf("\t\tx\textract files from .DSK (supports wildcards)\n");
         printf("\t\ta\tadd files to .DSK\n");
         printf("\t\trm\tdelete files from .DSK\n");
+        printf("\t\t\toptions for 'a': --boot-label=LABEL, --hidden-system-file=NAME\n");
         printf("\t\tsx\textract boot sector to a file\n");
         printf("\t\tsw\twrite boot sector from a file\n");
         printf("\t\ts\tinitialize boot sector (0=zeros, 1=default)\n");
